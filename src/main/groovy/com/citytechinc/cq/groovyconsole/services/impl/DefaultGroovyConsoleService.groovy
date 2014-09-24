@@ -41,6 +41,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
     static final String PARAMETER_FILE_NAME = "fileName"
 
     static final String PARAMETER_SCRIPT = "script"
+    static final String PARAMETER_DRYRUN = "dryRun"
 
     static final String EXTENSION_GROOVY = ".groovy"
 
@@ -95,14 +96,30 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def error = ""
 
         def scriptContent = request.getRequestParameter(PARAMETER_SCRIPT)?.getString(CharEncoding.UTF_8)
+        def dryRun = request.getRequestParameter(PARAMETER_DRYRUN)?.getString(CharEncoding.UTF_8).toBoolean()
 
         try {
+            LOG.info("DryRun={}", dryRun)
             def script = shell.parse(scriptContent)
 
             addMetaClass(resourceResolver, session, pageManager, script)
 
             runningTime = RUNNING_TIME {
                 result = script.run()
+                
+                if (session.hasPendingChanges()) {
+                    // list changes
+                    
+                    if (!dryRun) {
+                        session.save()
+                        LOG.info("Session saved")
+                    }
+                }
+                if (dryRun) {
+                    LOG.info("Dry run, not saving session")
+                    session.refresh(true)
+                    session.logout()
+                }
             }
 
             LOG.debug "script execution completed, running time = $runningTime"
@@ -111,7 +128,9 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
 
             saveOutput(session, output)
 
-            emailService.sendEmail(session, scriptContent, output, runningTime, true)
+            if (!dryRun) {
+                emailService.sendEmail(session, scriptContent, output, runningTime, true)
+            }
         } catch (MultipleCompilationErrorsException e) {
             LOG.error("script compilation error", e)
 
@@ -125,7 +144,9 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
 
             error = stackTrace.toString()
 
-            emailService.sendEmail(session, scriptContent, error, null, false)
+            if (!dryRun) {
+                emailService.sendEmail(session, scriptContent, error, null, false)
+            }
         } finally {
             stream.close()
             errorWriter.close()
