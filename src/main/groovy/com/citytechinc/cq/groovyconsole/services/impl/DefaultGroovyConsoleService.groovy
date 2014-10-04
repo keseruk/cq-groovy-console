@@ -1,5 +1,24 @@
 package com.citytechinc.cq.groovyconsole.services.impl
 
+import static org.codehaus.groovy.control.customizers.builder.CompilerCustomizationBuilder.withConfig
+import groovy.util.logging.Slf4j
+
+import javax.jcr.Session
+
+import org.apache.commons.lang3.CharEncoding
+import org.apache.felix.scr.ScrService
+import org.apache.felix.scr.annotations.Activate
+import org.apache.felix.scr.annotations.Component
+import org.apache.felix.scr.annotations.Reference
+import org.apache.felix.scr.annotations.Service
+import org.apache.jackrabbit.util.Text
+import org.apache.sling.api.SlingHttpServletRequest
+import org.apache.sling.api.resource.ResourceResolver
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.MultipleCompilationErrorsException
+import org.osgi.framework.BundleContext
+import org.slf4j.LoggerFactory
+
 import com.citytechinc.aem.groovy.extension.builders.NodeBuilder
 import com.citytechinc.aem.groovy.extension.builders.PageBuilder
 import com.citytechinc.cq.groovyconsole.services.ConfigurationService
@@ -11,23 +30,6 @@ import com.day.cq.replication.Replicator
 import com.day.cq.search.PredicateGroup
 import com.day.cq.search.QueryBuilder
 import com.day.cq.wcm.api.PageManager
-import groovy.util.logging.Slf4j
-import org.apache.commons.lang3.CharEncoding
-import org.apache.felix.scr.ScrService
-import org.apache.felix.scr.annotations.Activate
-import org.apache.felix.scr.annotations.Component
-import org.apache.felix.scr.annotations.Reference
-import org.apache.felix.scr.annotations.Service
-import org.apache.jackrabbit.util.Text
-import org.apache.sling.api.SlingHttpServletRequest
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.MultipleCompilationErrorsException
-import org.osgi.framework.BundleContext
-import org.slf4j.LoggerFactory
-
-import javax.jcr.Session
-
-import static org.codehaus.groovy.control.customizers.builder.CompilerCustomizationBuilder.withConfig
 
 @Service(GroovyConsoleService)
 @Component
@@ -45,8 +47,14 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
 
     static final String EXTENSION_GROOVY = ".groovy"
 
-    static final def STAR_IMPORTS = ["javax.jcr", "org.apache.sling.api", "org.apache.sling.api.resource",
-        "com.day.cq.search", "com.day.cq.tagging", "com.day.cq.wcm.api"]
+    static final def STAR_IMPORTS = [
+        "javax.jcr",
+        "org.apache.sling.api",
+        "org.apache.sling.api.resource",
+        "com.day.cq.search",
+        "com.day.cq.tagging",
+        "com.day.cq.wcm.api"
+    ]
 
     static final def RUNNING_TIME = { closure ->
         def start = System.currentTimeMillis()
@@ -77,6 +85,79 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
     BundleContext bundleContext
 
     @Override
+    Map<String, String> runScript(ResourceResolver resourceResolver, String scriptPath) {
+        def session = resourceResolver.adaptTo(Session)
+        def pageManager = resourceResolver.adaptTo(PageManager)
+
+        def stream = new ByteArrayOutputStream()
+        def binding = createBindingForAutoRunnable(resourceResolver, stream)
+        def configuration = createConfiguration()
+        def shell = new GroovyShell(binding, configuration)
+        
+        def stackTrace = new StringWriter()
+        def errorWriter = new PrintWriter(stackTrace)
+
+        def result = ""
+        def runningTime = ""
+        def output = ""
+        def error = ""
+        
+        try {
+            LOG.info("Auto-run Groovy script={}", scriptPath)
+            def scriptResource = resourceResolver.getResource(scriptPath)
+            def is = scriptResource.adaptTo(InputStream.class)
+            def reader = new BufferedReader(new InputStreamReader(is))
+            def out = new StringBuilder()
+            def line = ""
+            while ((line = reader.readLine()) != null) {
+                out.append(line)
+                out.append(System.lineSeparator())
+            }
+            reader.close();
+            def scriptContent = out.toString()                        
+            LOG.info(scriptContent)
+            
+            def script = shell.parse(scriptContent)
+
+            addMetaClass(resourceResolver, session, pageManager, script)
+
+            runningTime = RUNNING_TIME {
+                result = script.run()
+
+                if (session.hasPendingChanges()) {
+                    // TODO list changes in LOG
+
+                    session.save()
+                    LOG.info("Session saved")
+                }
+            }
+
+            LOG.info "script execution completed, running time = $runningTime"
+
+            output = stream.toString(CharEncoding.UTF_8)
+
+            saveOutput(session, output)
+
+            emailService.sendEmail(session, scriptPath, output, runningTime, true)
+        } catch (MultipleCompilationErrorsException e) {
+            LOG.error("script compilation error", e)
+
+            e.printStackTrace(errorWriter)
+
+        } catch (Throwable t) {
+            LOG.error("error running script", t)
+
+            t.printStackTrace(errorWriter)
+            error = stackTrace.toString()
+            
+            emailService.sendEmail(session, scriptPath, error, null, false)
+        } finally {
+            stream.close()
+            errorWriter.close()
+        }
+    }
+
+    @Override
     Map<String, String> runScript(SlingHttpServletRequest request) {
         def resourceResolver = request.resourceResolver
         def session = resourceResolver.adaptTo(Session)
@@ -99,17 +180,17 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def dryRun = request.getRequestParameter(PARAMETER_DRYRUN)?.getString(CharEncoding.UTF_8).toBoolean()
 
         try {
-            LOG.info("DryRun={}", dryRun)
+            LOG.info("Script={}, DryRun={}", scriptContent, dryRun)
             def script = shell.parse(scriptContent)
 
             addMetaClass(resourceResolver, session, pageManager, script)
 
             runningTime = RUNNING_TIME {
                 result = script.run()
-                
+
                 if (session.hasPendingChanges()) {
                     // list changes
-                    
+
                     if (!dryRun) {
                         session.save()
                         LOG.info("Session saved")
@@ -122,7 +203,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
                 }
             }
 
-            LOG.debug "script execution completed, running time = $runningTime"
+            LOG.info "script execution completed, running time = $runningTime"
 
             output = stream.toString(CharEncoding.UTF_8)
 
@@ -205,6 +286,25 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         ])
     }
 
+    def createBindingForAutoRunnable(resourceResolver, stream) {
+        def printStream = new PrintStream(stream, true, CharEncoding.UTF_8)
+
+        def session = resourceResolver.adaptTo(Session)
+
+        new Binding([
+            out: printStream,
+            log: LoggerFactory.getLogger("groovyconsole-autorun"),
+            session: session,
+            slingRequest: new NullSlingRequest(),
+            pageManager: resourceResolver.adaptTo(PageManager),
+            resourceResolver: resourceResolver,
+            queryBuilder: queryBuilder,
+            nodeBuilder: new NodeBuilder(session),
+            pageBuilder: new PageBuilder(session),
+            bundleContext: bundleContext
+        ])
+    }
+
     def addMetaClass(resourceResolver, session, pageManager, script) {
         script.metaClass {
             delegate.getNode = { String path ->
@@ -221,20 +321,18 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
 
             delegate.move = { String src ->
                 ["to": { String dst ->
-                    session.move(src, dst)
-                    session.save()
-                }]
+                        session.move(src, dst)
+                        session.save()
+                    }]
             }
 
             delegate.copy = { String src ->
                 ["to": { dst ->
-                    session.workspace.copy(src, dst)
-                }]
+                        session.workspace.copy(src, dst)
+                    }]
             }
 
-            delegate.save = {
-                session.save()
-            }
+            delegate.save = { session.save() }
 
             delegate.getService = { Class serviceType ->
                 def serviceReference = bundleContext.getServiceReference(serviceType)

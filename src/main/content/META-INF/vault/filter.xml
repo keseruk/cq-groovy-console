@@ -6,4 +6,6 @@
 	<filter root="/etc/groovyconsole">
 		<exclude pattern="/etc/groovyconsole/scripts(/.*)?"/>
 	</filter>
+	<filter root="/etc/workflow/launcher/config/groovy-script-runner" />
+	<filter root="/etc/workflow/models/groovy-script-runner" />
 </workspaceFilter>
