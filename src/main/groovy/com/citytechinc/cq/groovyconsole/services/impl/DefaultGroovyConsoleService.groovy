@@ -85,7 +85,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
     BundleContext bundleContext
 
     @Override
-    Map<String, String> runScript(ResourceResolver resourceResolver, String scriptPath) {
+    Map<String, String> runScriptAtPath(ResourceResolver resourceResolver, String scriptPath) {
         def session = resourceResolver.adaptTo(Session)
         def pageManager = resourceResolver.adaptTo(PageManager)
 
@@ -93,7 +93,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def binding = createBindingForAutoRunnable(resourceResolver, stream)
         def configuration = createConfiguration()
         def shell = new GroovyShell(binding, configuration)
-        
+
         def stackTrace = new StringWriter()
         def errorWriter = new PrintWriter(stackTrace)
 
@@ -101,7 +101,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def runningTime = ""
         def output = ""
         def error = ""
-        
+
         try {
             LOG.info("Auto-run Groovy script={}", scriptPath)
             def scriptResource = resourceResolver.getResource(scriptPath)
@@ -114,9 +114,9 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
                 out.append(System.lineSeparator())
             }
             reader.close();
-            def scriptContent = out.toString()                        
+            def scriptContent = out.toString()
             LOG.info(scriptContent)
-            
+
             def script = shell.parse(scriptContent)
 
             addMetaClass(resourceResolver, session, pageManager, script)
@@ -125,8 +125,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
                 result = script.run()
 
                 if (session.hasPendingChanges()) {
-                    // TODO list changes in LOG
-
+                    logModifications(getModifications(session))
                     session.save()
                     LOG.info("Session saved")
                 }
@@ -143,13 +142,12 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
             LOG.error("script compilation error", e)
 
             e.printStackTrace(errorWriter)
-
         } catch (Throwable t) {
             LOG.error("error running script", t)
 
             t.printStackTrace(errorWriter)
             error = stackTrace.toString()
-            
+
             emailService.sendEmail(session, scriptPath, error, null, false)
         } finally {
             stream.close()
@@ -175,6 +173,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def runningTime = ""
         def output = ""
         def error = ""
+        def modifications = []
 
         def scriptContent = request.getRequestParameter(PARAMETER_SCRIPT)?.getString(CharEncoding.UTF_8)
         def dryRun = request.getRequestParameter(PARAMETER_DRYRUN)?.getString(CharEncoding.UTF_8).toBoolean()
@@ -190,7 +189,9 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
 
                 if (session.hasPendingChanges()) {
                     // list changes
-
+                    modifications.addAll(getModifications(session))
+                    logModifications(modifications)
+                    
                     if (!dryRun) {
                         session.save()
                         LOG.info("Session saved")
@@ -198,7 +199,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
                 }
                 if (dryRun) {
                     LOG.info("Dry run, not saving session")
-                    session.refresh(true)
+                    session.refresh(false)
                     session.logout()
                 }
             }
@@ -233,7 +234,33 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
             errorWriter.close()
         }
 
-        [executionResult: result as String, outputText: output, stacktraceText: error, runningTime: runningTime]
+        [executionResult: result as String, outputText: output, stacktraceText: error, runningTime: runningTime, modifications: modifications]
+    }
+
+    private List<String> getModifications(session) {
+        def modifications = []
+
+        // This is an inefficient (but only) way of finding modified items therefore we limit the search to /content
+        session.getNode("/content").recurse { node ->
+            if (node.isModified() || node.isNew()) {
+                modifications.add(node.getPath())
+            } else {
+                // check properties
+                node.getProperties().each {
+                    if (it.isModified() || it.isNew()) {
+                        modifications.add(node.getPath())
+                    }
+                }
+            }
+        }
+
+        modifications
+    }
+
+    private logModifications(List<String> modifications) {
+        modifications.each {
+            LOG.info("modified: " + it)
+        }
     }
 
     @Override

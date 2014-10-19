@@ -25,6 +25,11 @@
             <pre></pre>
         </div>
 
+        <div id="modifications" class="alert alert-success" style="display: none;">
+            <h6>Modifications in /content</h6>
+            <pre></pre>
+        </div>
+
         <div id="output" class="alert alert-success" style="display: none;">
             <h6>Output</h6>
             <pre></pre>

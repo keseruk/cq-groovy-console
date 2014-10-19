@@ -35,7 +35,7 @@ class ScriptAutorunnerWorkflow implements WorkflowProcess{
 
         try {
             def resourceResolver = resourceResolverFactory.getAdministrativeResourceResolver(null)
-            groovyConsoleService.runScript(resourceResolver, script)
+            groovyConsoleService.runScriptAtPath(resourceResolver, script)
             resourceResolver.close()
         } catch (Exception e) {
             throw new WorkflowException("Could not auto-run script: " + script, e);

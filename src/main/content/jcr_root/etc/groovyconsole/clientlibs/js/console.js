@@ -37,8 +37,8 @@ var GroovyConsole = function () {
 
         // clear results
         $('#stacktrace').text('').fadeOut('fast');
-        $('#result,#output,#running-time').fadeOut('fast');
-        $('#result pre,#output pre,#running-time pre').text('');
+        $('#result,#modifications,#output,#running-time').fadeOut('fast');
+        $('#result pre,#modifications pre,#output pre,#running-time pre').text('');
     }
 
     return {
@@ -188,6 +188,7 @@ var GroovyConsole = function () {
                     dryRun: dryRun
                 }).done(function (data) {
                     var result = data.executionResult;
+                    var modifications = data.modifications;
                     var output = data.outputText;
                     var stacktrace = data.stacktraceText;
                     var runtime = data.runningTime;
@@ -203,6 +204,11 @@ var GroovyConsole = function () {
                         if (result && result.length) {
                             $('#result pre').text(result);
                             $('#result').fadeIn('fast');
+                        }
+
+                        if (modifications && modifications.length) {
+                            $('#modifications pre').text(modifications.toString().split(',').join('\n'));
+                            $('#modifications').fadeIn('fast');
                         }
 
                         if (output && output.length) {
