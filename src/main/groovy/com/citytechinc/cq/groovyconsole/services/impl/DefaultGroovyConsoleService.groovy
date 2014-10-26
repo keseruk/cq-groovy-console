@@ -176,7 +176,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def modifications = []
 
         def scriptContent = request.getRequestParameter(PARAMETER_SCRIPT)?.getString(CharEncoding.UTF_8)
-        def dryRun = request.getRequestParameter(PARAMETER_DRYRUN)?.getString(CharEncoding.UTF_8).toBoolean()
+        def dryRun = request.getRequestParameter(PARAMETER_DRYRUN)?.getString(CharEncoding.UTF_8)?.toBoolean()
 
         try {
             LOG.info("Script={}, DryRun={}", scriptContent, dryRun)
@@ -207,6 +207,9 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
             LOG.info "script execution completed, running time = $runningTime"
 
             output = stream.toString(CharEncoding.UTF_8)
+            if (dryRun) {
+                output += "Changes not persisted due to dry-run!\n"
+            }
 
             saveOutput(session, output)
 

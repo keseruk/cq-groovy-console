@@ -13,6 +13,7 @@ import javax.jcr.RepositoryException
 
 import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_FILE_NAME
 import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_SCRIPT
+import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_DRYRUN
 import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.RELATIVE_PATH_SCRIPT_FOLDER
 
 class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
@@ -55,7 +56,7 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
         setup:
         def script = scriptAsString
         def request = requestBuilder.build {
-            parameters = [(PARAMETER_SCRIPT): script]
+            parameters = [(PARAMETER_SCRIPT): script, (PARAMETER_DRYRUN): ("false")]
         }
 
         when:
@@ -108,7 +109,7 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
 
     void assertScriptResult(map) {
         assert !map.executionResult
-        assert map.outputText == "BEER\n"
+        assert map.outputText.trim() == "BEER"
         assert !map.stacktraceText
         assert map.runningTime
     }
