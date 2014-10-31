@@ -1,20 +1,27 @@
 package com.citytechinc.cq.groovyconsole.services.impl
 
+import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_DRYRUN
+import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_FILE_NAME
+import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_SCRIPT
+import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.RELATIVE_PATH_SCRIPT_FOLDER
+
+import javax.jcr.RepositoryException
+
+import org.apache.sling.api.adapter.AdapterFactory
+import org.apache.sling.api.resource.Resource
+import org.apache.sling.api.resource.ResourceResolver
+import org.apache.sling.api.resource.ValueMap
+import org.osgi.framework.BundleContext
+
+import spock.lang.Shared
+
+import com.citytechinc.aem.groovy.extension.builders.NodeBuilder
 import com.citytechinc.aem.prosper.specs.ProsperSpec
 import com.citytechinc.cq.groovyconsole.services.ConfigurationService
 import com.citytechinc.cq.groovyconsole.services.EmailService
 import com.day.cq.commons.jcr.JcrConstants
 import com.day.cq.replication.Replicator
 import com.day.cq.search.QueryBuilder
-import org.osgi.framework.BundleContext
-import spock.lang.Shared
-
-import javax.jcr.RepositoryException
-
-import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_FILE_NAME
-import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_SCRIPT
-import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.PARAMETER_DRYRUN
-import static com.citytechinc.cq.groovyconsole.services.impl.DefaultGroovyConsoleService.RELATIVE_PATH_SCRIPT_FOLDER
 
 class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
 
@@ -52,6 +59,32 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
         parameterMap = [(PARAMETER_FILE_NAME): (SCRIPT_NAME), (PARAMETER_SCRIPT): scriptAsString]
     }
 
+    Collection<AdapterFactory> addAdapterFactories() {
+        def adapterFactory = new AdapterFactory() {
+            @Override
+            def <AdapterType> AdapterType getAdapter(Object adaptable, Class<AdapterType> type) {
+                def result
+
+                if (adaptable instanceof Resource) {
+                    if (type == InputStream) {
+                        Resource res = (Resource) adaptable;
+                        if ( res.getResourceType() == "nt:file") {
+                            return res.getChild("jcr:content").adaptTo(ValueMap.class).get("jcr:data")
+                        } else { //TODO: Implement nt:resource?
+                            return null
+                        }
+                    }
+                } else {
+                    result = null
+                }
+
+                (AdapterType) result
+            }
+        }
+
+        [adapterFactory]
+    }
+
     def "run script"() {
         setup:
         def script = scriptAsString
@@ -65,6 +98,27 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
         then:
         assertScriptResult(map)
     }
+
+    def "run script at path"() {
+        setup:
+        new NodeBuilder(session).etc {
+            scripts("sling:Folder") {
+                script1("nt:file") {
+                    "jcr:content"("nt:resource", ["jcr:data" : scriptAsString, "jcr:mimeType" : "text/plain"])
+                }
+            }
+        }
+
+        when:
+        def map = consoleService.runScriptAtPath(resourceResolver, "/etc/scripts/script1")
+
+        then:
+        assertScriptResult(map)
+
+        cleanup:
+        removeAllNodes()
+    }
+
 
     def "save script"() {
         setup:

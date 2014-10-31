@@ -153,6 +153,8 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
             stream.close()
             errorWriter.close()
         }
+
+        [executionResult: result as String, outputText: output, stacktraceText: error, runningTime: runningTime]
     }
 
     @Override
