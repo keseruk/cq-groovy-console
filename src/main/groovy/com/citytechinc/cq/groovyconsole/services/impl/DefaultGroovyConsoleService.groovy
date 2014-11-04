@@ -4,6 +4,7 @@ import static org.codehaus.groovy.control.customizers.builder.CompilerCustomizat
 import groovy.util.logging.Slf4j
 
 import javax.jcr.Session
+import javax.jcr.Node
 
 import org.apache.commons.lang3.CharEncoding
 import org.apache.felix.scr.ScrService
@@ -46,6 +47,8 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
     static final String PARAMETER_DRYRUN = "dryRun"
 
     static final String EXTENSION_GROOVY = ".groovy"
+    
+    static final def ARCHIVE = "_archive"
 
     static final def STAR_IMPORTS = [
         "javax.jcr",
@@ -101,6 +104,7 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         def runningTime = ""
         def output = ""
         def error = ""
+        def modifications = []
 
         try {
             LOG.info("Auto-run Groovy script={}", scriptPath)
@@ -125,15 +129,18 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
                 result = script.run()
 
                 if (session.hasPendingChanges()) {
-                    logModifications(getModifications(session))
+                    modifications.addAll(getModifications(session))
+                    logModifications(modifications)
+                    archiveScript(scriptResource, pageManager)
                     session.save()
+                    modifications.each {
+                        output += it + "\n"
+                    }
                     LOG.info("Session saved")
                 }
             }
 
             LOG.info "script execution completed, running time = $runningTime"
-
-            output = stream.toString(CharEncoding.UTF_8)
 
             saveOutput(session, output)
 
@@ -266,6 +273,20 @@ class DefaultGroovyConsoleService implements GroovyConsoleService {
         modifications.each {
             LOG.info("modified: " + it)
         }
+    }
+    
+    private archiveScript(scriptResource, pageManager) {
+        def archiveNode = null
+        def parentResource = scriptResource.getParent()
+        def parentNode = parentResource.adaptTo(Node.class)
+        def name = parentNode.getName() + ARCHIVE
+        if (parentNode.getParent().hasNode(name)) {
+            archiveNode = parentNode.getParent().getNode(name)
+        } else {
+            archiveNode = parentNode.getParent().addNode(name, JcrConstants.NT_FOLDER)
+        }
+        def archivedFile = archiveNode.getPath() + "/" + scriptResource.getName()
+        pageManager.move(scriptResource, archivedFile, null, false, true, null)
     }
 
     @Override
