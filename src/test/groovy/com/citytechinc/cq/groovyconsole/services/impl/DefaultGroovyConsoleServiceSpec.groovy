@@ -68,8 +68,8 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
                 if (adaptable instanceof Resource) {
                     if (type == InputStream) {
                         Resource res = (Resource) adaptable;
-                        if ( res.getResourceType() == "nt:file") {
-                            return res.getChild("jcr:content").adaptTo(ValueMap.class).get("jcr:data")
+                        if ( res.getResourceType() == JcrConstants.NT_FILE) {
+                            return res.getChild(JcrConstants.JCR_CONTENT).adaptTo(ValueMap.class).get(JcrConstants.JCR_DATA)
                         } else { //TODO: Implement nt:resource?
                             return null
                         }
@@ -102,9 +102,9 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
     def "run script at path"() {
         setup:
         new NodeBuilder(session).etc {
-            scripts("sling:Folder") {
-                script1("nt:file") {
-                    "jcr:content"("nt:resource", ["jcr:data" : scriptAsString, "jcr:mimeType" : "text/plain"])
+            scripts(JcrConstants.NT_FOLDER) {
+                script1(JcrConstants.NT_FILE) {
+                    "jcr:content"(JcrConstants.NT_RESOURCE, ["jcr:data" : scriptAsString, "jcr:mimeType" : "text/plain"])
                 }
             }
         }
@@ -113,7 +113,7 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
         def map = consoleService.runScriptAtPath(resourceResolver, "/etc/scripts/script1")
 
         then:
-        assertScriptResult(map)
+        assertScriptAtPathResult(map)
 
         cleanup:
         removeAllNodes()
@@ -164,6 +164,13 @@ class DefaultGroovyConsoleServiceSpec extends ProsperSpec {
     void assertScriptResult(map) {
         assert !map.executionResult
         assert map.outputText.trim() == "BEER"
+        assert !map.stacktraceText
+        assert map.runningTime
+    }
+
+    void assertScriptAtPathResult(map) {
+        assert !map.executionResult
+        assert map.outputText.trim() == ""
         assert !map.stacktraceText
         assert map.runningTime
     }

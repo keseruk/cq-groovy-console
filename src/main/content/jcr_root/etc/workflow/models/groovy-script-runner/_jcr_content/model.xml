@@ -24,7 +24,8 @@
             type="PROCESS">
             <metaData
                 jcr:primaryType="nt:unstructured"
-                PROCESS="com.citytechinc.cq.groovyconsole.workflows.ScriptAutorunnerWorkflow"/>
+                PROCESS="com.citytechinc.cq.groovyconsole.workflows.ScriptAutorunnerWorkflow"
+                PROCESS_AUTO_ADVANCE="true"/>
         </node1>
         <node2
             jcr:primaryType="cq:WorkflowNode"
